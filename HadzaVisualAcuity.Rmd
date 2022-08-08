@@ -12,8 +12,8 @@ Sys.Date()
 First we'll start by loading our packages. If any of the packages or functions used in this analysis are now broken or depreciated, consider using the groundhog package with the date provided above to load packages
 
 ```{r}
-library(brms) #Bayesian regressions with STAN
 library(tidyverse) #Load dplyr, ggplot and others
+library(brms) #Bayesian regressions with STAN
 library(tidybayes) #Useful functions for describing posterior (e.g., mean_hdi)
 library(ggplot2) #Good-looking visualization package
 library(bayesplot) #Quick and easy coef plots.
@@ -62,7 +62,7 @@ d <-
   )
 ```
 
-Finally, because I expect the relationship of vision with age is expected to be quadratic, let's create and age squared variable. 
+Because I expect the relationship of vision with age is expected to be quadratic, let's create and age squared variable. 
 
 ```{r}
 
@@ -239,7 +239,7 @@ fig1 <-
   ylab("Best Eye Visual Acuity (LogMAR)") +
   xlab("Age") +
   scale_x_continuous(breaks = c(10,20,30,40,50,60,70)) + 
-  theme(text = element_text(family = "Times"),
+  theme(#text = element_text(family = "Times"),
         panel.grid = element_blank())
 
 fig1
@@ -352,7 +352,7 @@ ms2 <- model_weights(va1.10, va1.11, va1.12, weights = "loo") %>%
 ms2
 ```
 
-Now to look at our estimates. More traditional to do another best of fit line, but as we're thinking about age specific visual acuity, I prefer to display the data as binned fitted predictions for a range of different ages, with error bars for our credibility intervals. I'll also include the linear model on the right.
+Now to look at our estimates. More traditional to do another best of fit line, but as we're thinking about age specific visual acuity, I prefer to display the data as binned fitted predictions for a range of different ages, with error bars for our credibility intervals. I'll also include a fit line on the right.
 
 ```{r}
 
@@ -407,7 +407,7 @@ fig4 <-
 fig3 + fig4
 ```
 
-As we can see myopia prevalence is between 5-10% for those under 40, with rapidly increasing prevalence (and diminishing statistical power!) thereafter. Unexpectedly, in our data, 15-year-olds have worse mean predicted eyesight than those between 25-45. This could be a result of increased uptake in schooling among younger Hadza but, looking at the credibility intervals, I think it's more likely to be a consequence of low samples for younger people. It merits further analysis, however, so let's look for affects of schooling and longitudinal trends.
+As we can see myopia prevalence is between 5-10% for those under 40, with rapidly increasing prevalence (and diminishing statistical power!) thereafter. Unexpectedly, in our data, 15-year-olds have worse mean predicted eyesight than those between 25-45. This could be a result of increased uptake in schooling among younger Hadza but, looking at the credibility intervals, I think it's more likely to be a consequence of low samples for younger people. It merits further analysis, however, so let's look for effects of schooling and longitudinal trends.
 
 ### Schooling ###
 
