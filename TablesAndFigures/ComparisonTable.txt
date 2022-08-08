@@ -1,0 +1,26 @@
+% latex table generated in R 4.2.0 by xtable 1.8-4 package
+% Tue Jul 19 17:41:03 2022
+\begin{table}[ht]
+\centering
+\begingroup\tiny
+\begin{tabular}{lllrlrlrll}
+  \hline
+Country & Region & Sample & Average Age & Age Range & \% & Hadza Est. \% (90\%CIs) & P.P. Difference & Notes & Study \\ 
+ Singapore & E. Asia & 28908 & 19.80 & 17-29 & 81.60 & 6.48 (2.37-12.01\%) & 75.12 & Non-cycloplegic autorefraction & \citealt{Koh2014} \\ 
+  China & E. Asia & 15066 & 13.20 & 7-18 & 64.90 & 10.16 (2.14-23.49\%) & 54.74 & Non-cycloplegic autorefraction & \citealt{You2014} \\ 
+  UK & Europe & 373 & 19.55 & 17-30 & 51.70 & 6.56 (2.35-12.26\%) & 45.14 & UK Undergraduates; Non-cycloplegic autorefraction & \citealt{Logan2005} \\ 
+  Australia & Meganesia & 1202 & 17.00 & 17 & 30.80 & 7.62 (2.27-15.44\%) & 23.18 & 2011 Data; Cycloplegic autorefraction & \citealt{French2013} \\ 
+  Argentine & S. America & 1518 & 43.20 & 25-65 & 29.18 & 8.13 (4.33-12.98\%) & 21.05 & Office Workers; Non-cycloplegic Subjective & \citealt{Cortinez2008} \\ 
+  Nigeria & Africa & 252 & 36.20 & 19-63 & 11.40 & 5.85 (3.08-9.38\%) & 5.55 & Subjective refraction & \citealt{Eze2012} \\ 
+  Ecuador & S. America & 507 & 31.00 & 18-45* & 4.70 & 5.23 (2.75-8.33\%) & -0.53 & Naporuna Community; Cycloplegic autorefraction & \citealt{Jimenez2004} \\ 
+  Colombia & S. America & 1228 & 11.40 & 8-17 & 11.20 & 11.9 (2.05-29.1\%) & -0.70 & Non-cycloplegic autorefraction & \citealt{Galvis2017} \\ 
+  South Africa & Africa & 1586 & 15.81 & 13-18 & 7.00 & 8.27 (2.23-17.5\%) & -1.27 & Non-cycloplegic autorefraction & \citealt{Wajuihian2017} \\ 
+  Mongolia & E. Asia & 1057 & 12.27 & 7-17 & 5.80 & 11.01 (2.09-26.24\%) & -5.21 & Non-cycloplegic autorefraction & \citealt{Narankhand2006} \\ 
+  Gabon & Africa & 3624 & 42.20 & 20-65* & 0.39 & 7.67 (4.06-12.27\%) & -7.28 & Per eye measures, 2364 individuals; Cycloplegic retinoscopy & \citealt{Holm1937} \\ 
+  USA (Alaska) & N. America & 131 & 54.83 & 41-88 & 1.50 & 20.49 (12.32-30.2\%) & -18.99 & Right Eyes; Subjective refraction & \citealt{Young1969} \\ 
+  Iran & W. Asia & 1367 & 63.70 & 55-80 & 27.20 & 46.65 (28.53-66.06\%) & -19.45 & Mashad; Non-cycloplegic autorefraction & \citealt{Yekta2009} \\ 
+  \end{tabular}
+\endgroup
+\caption{Myopia prevalences from a range of studies compared to equivalent-age fitted Hadza myopia prevalence estimates from our best-fitting model. Where study mean ages were not available, we used the centre of the study age range instead, indicated with asterisks. Most items were previously tabulated or summarised by \cite[][]{Holden2016}, \cite[][]{Grzybowski2020} and \cite[][]{Cordain2002}.} 
+\label{Tab:Comparisons}
+\end{table}

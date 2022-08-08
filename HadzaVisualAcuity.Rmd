@@ -1,0 +1,1196 @@
+---
+title: "Hadza Vision Acuity and Myopia Prevalence Analysis"
+output: html_notebook
+---
+
+In this analysis we've going to explore Hadza visual acuity data and use it to estimate age-specific myopia prevalence. These analyses were conducted on the following date:
+
+```{r}
+Sys.Date()
+```
+
+First we'll start by loading our packages. If any of the packages or functions used in this analysis are now broken or depreciated, consider using the groundhog package with the date provided above to load packages
+
+```{r}
+library(brms) #Bayesian regressions with STAN
+library(tidyverse) #Load dplyr, ggplot and others
+library(tidybayes) #Useful functions for describing posterior (e.g., mean_hdi)
+library(ggplot2) #Good-looking visualization package
+library(bayesplot) #Quick and easy coef plots.
+library(ggridges) #Fancy density ridgeplots for fancy people.
+library(magrittr) #For two-way pipes
+library(rstudioapi) #Allows RStudio to get the current working directory.
+library(patchwork) #Easily stitch figures together with operators.
+library(xtable) # Brings many types of table format to the table. Used here to export LaTeX tables.  
+
+```
+
+Next let's load our data. This uses the rstudio API and requires that the data be in the same folder as this script.
+
+```{r}
+setwd(dirname(getActiveDocumentContext()$path))
+d <- read.csv("CombinedVAdata.csv", header=TRUE, na.strings=c("","NA"))
+d %<>% tibble()
+head(d)
+```
+
+In case there are any sources of (psuedo-)random variation in our functions, let's set a RNG seed.
+
+```{r}
+set.seed(42)
+```
+
+## Data Preperation ##
+
+First let's create a best-eye visual acuity measure. 
+
+```{r}
+
+d <- d %>%
+  mutate(
+    BestEyeLogMAR = pmin(logMARright, logMARleft)
+  )
+```
+
+We'll use the best eye VA measure to create a binary variable for myopia. 
+
+```{r}
+d <- 
+  d %>%
+  mutate(
+    Myopia = if_else(BestEyeLogMAR > .3, 1, 0)
+  )
+```
+
+Finally, because I expect the relationship of vision with age is expected to be quadratic, let's create and age squared variable. 
+
+```{r}
+
+d <- d %>%
+  mutate(
+    agesq = age^2
+  )
+
+```
+
+Let's also create a factor variable for the decade research was conducted, which we'll use to look for longitudinal trends. We can do this simply by recording our PI variable.
+
+```{r}
+
+d <- d %>%
+  mutate(
+    Decade = recode(PI, "Apicella" = "2000s", "StibbardHawkes" = "2010s")
+  )
+
+
+```
+
+Now we'll make sure our analysis variables are the correct data type for analysis. 
+
+```{r}
+d%<>%
+  mutate(across(c("age", "agesq", "BestEyeLogMAR"), as.numeric)) %>%   
+  mutate(across(c("sex", "Decade"), as_factor))
+```
+
+There was one unexpected case of in our data where a participant was too young. We assume this was a typo but we'll remove it before analysis.
+
+```{r}
+d <- d[d$age >= 9,]
+```
+
+Now let's briefly do some counts to report in the paper.
+
+```{r}
+
+DecadeDif <- d %>% group_by(PI) %>%
+  summarise(PIcount = sum(!is.na(BestEyeLogMAR)))
+
+PIAgeRange <- d %>% group_by(PI) %>%
+  summarise(PIRange = range(age, na.rm =T))
+
+NMyopia <- sum((d$Myopia > 0), na.rm =T)
+  
+```
+
+## Analysis ##
+
+### Best Eye Visual Acuity ###
+
+This will be a simple analysis. First we want to explore the relationship between visual acuity and age. It helps to visualise, so let's do that.
+
+```{r}
+plot(d$age, d$BestEyeLogMAR)
+```
+
+We can see the expected realationship between VA and age already. Superficially this looks linear, but we'll run a few models and check which fits better. 
+
+So, let's do that. We'll run three models. A mean only model, a model including age, and a model including age as a quadratic.
+
+```{r}
+va1.00 <- brm(
+  data = d, family = gaussian,
+  BestEyeLogMAR ~ 1,
+  prior = c(prior(normal(0, 1), class = Intercept)),
+  iter = 10000, warmup = 5000, cores = 4, chains = 4,
+  #control = list(adapt_delta = .9),
+  seed = 42,
+  file = "fits/va1.00"
+)
+
+va1.00 <- add_criterion(va1.00, criterion = c("loo", "waic")) 
+
+va1.01 <- brm(
+  data = d, family = gaussian,
+  BestEyeLogMAR ~ 1 + age,
+  prior = c(prior(normal(0, 1), class = b)),
+  iter = 10000, warmup = 5000, cores = 4, chains = 4,
+  #control = list(adapt_delta = .9),
+  seed = 42,
+  file = "fits/va1.01"
+)
+
+va1.01 <- add_criterion(va1.01, criterion = c("loo", "waic")) 
+
+
+va1.02 <- brm(
+  data = d, family = gaussian,
+  BestEyeLogMAR ~ 1 + age + agesq,
+  prior = c(prior(normal(0, 1), class = b)),
+  iter = 10000, warmup = 5000, cores = 4, chains = 4,
+  #control = list(adapt_delta = .9),
+  seed = 42,
+  file = "fits/va1.02"
+)
+
+va1.02 <- add_criterion(va1.02, criterion = c("loo", "waic")) 
+
+```
+
+Now a quick model selection to see if I) age improves upon the null model; II) to see if the the quadratic model outperforms the linear one.
+
+```{r}
+ms1 <- loo_compare(va1.00, va1.01, va1.02, criterion = "loo") %>%
+  round(digits = 2) %>% 
+  as.data.frame() %>% 
+  select(elpd_diff,se_diff) %>% 
+  rownames_to_column() %>%
+  arrange(rowname)
+  
+ms1 <- model_weights(va1.00, va1.01, va1.02, weights = "loo") %>% 
+  round(digits = 2) %>%
+  as.data.frame() %>% 
+  rownames_to_column() %>%
+  arrange(rowname) %>%
+  column_to_rownames("rowname") %>%
+  cbind(ms1) %>%
+  rename(
+    Weights = ".",
+    "ELPD Difference" = elpd_diff,
+    "SE Difference" = "se_diff"
+  ) %>%
+  arrange(desc(`ELPD Difference`)) %>%
+  select(-rowname)
+  
+ms1
+```
+
+Including age improves on the baseline model. Moreover, it appears as if the quadratic model improves upon the linear model. Let's visualise our model predictions against our data. 
+
+We'll use the fitted and predict functions. For an explanation of the code please consult Solomon Kurz's wonderful code conversion for the 2nd edition of statistical rethinking, section 4. Essentially fitted provides credibility intervals for the mean of the predictor (visual acuity) at varying ages, while predicted also takes account of the standard deviation. To put it another way, were we to use our model to simulate data, we should expect age-specific means to fall within the range of fitted values and should expect most data to fall within the range of predicted values.
+
+```{r}
+Age_seq <- 
+  tibble(age = seq(from = 10, to = 80, length.out = 40)) %>% 
+  mutate(agesq = age^2)
+
+fitd_quad <-
+  fitted(va1.02, 
+         newdata = Age_seq, probs = c(.05,.95)) %>%
+  data.frame() %>%
+  bind_cols(Age_seq)
+
+pred_quad <-
+  predict(va1.02, 
+          newdata = Age_seq, probs = c(.05,.95)) %>%
+  data.frame() %>%
+  bind_cols(Age_seq)  
+```
+
+Now to plot. Fitted (means) in dark great, predicted in light gray.
+
+```{r}
+fig1 <-
+  ggplot(data = d, 
+       aes(x = age)) +
+  geom_ribbon(data = pred_quad, 
+              aes(ymin = Q5, ymax = Q95),
+              fill = "grey83") +
+  geom_smooth(data = fitd_quad,
+              aes(y = Estimate, ymin = Q5, ymax = Q95),
+              stat = "identity",
+              fill = "grey70", color = "black", alpha = 1, size = 1/2) +
+  geom_point(aes(y = BestEyeLogMAR),
+             color = "navyblue", 
+             shape = 1,
+             size = 1.5, alpha = 1/2) +
+  coord_cartesian(xlim = range(d$age),
+                  ylim = range(d$BestEyeLogMAR)) +
+  ylab("Best Eye Visual Acuity (LogMAR)") +
+  xlab("Age") +
+  scale_x_continuous(breaks = c(10,20,30,40,50,60,70)) + 
+  theme(text = element_text(family = "Times"),
+        panel.grid = element_blank())
+
+fig1
+```
+
+We'll also use the fitted function to print some nice age-specific estimates at five year intervals.
+
+```{r}
+
+Age_seq <- 
+  tibble(age = seq(from = 15, to = 80, by = 5)) %>% 
+  mutate(agesq = age^2)
+
+fitd_5int <-
+  fitted(va1.02, 
+         newdata = Age_seq, probs = c(.05,.95)) %>%
+  data.frame() %>%
+  bind_cols(Age_seq)
+
+fig2 <- fitd_5int %>%
+  ggplot(aes(x=Estimate, y = age)) +
+  geom_point() + 
+  geom_errorbar(aes(xmin=Q5, xmax=Q95), width=0, lwd = .7) +
+  theme_bw(base_size=10) + xlab("Estimated Best-Eye Visual Acuity (LogMAR)") 
+
+fig2
+
+```
+
+Astonishingly, this looks just like the previous figure but rotated and chopped up. But I still find this a useful way of visualising.
+
+### Myopia Rates ###
+
+Let's now investigate myopia rates directly. Here we'll use our 0/1 myopia variable as the outcome, and use a binomial instead of a Gaussian linear model. 
+
+```{r}
+va1.10 <- brm(
+  data = d, family = bernoulli,
+  Myopia ~ 1,
+  prior = c(prior(normal(0, 10), class = Intercept)),
+  iter = 10000, warmup = 5000, cores = 4, chains = 4,
+  #control = list(adapt_delta = .9),
+  seed = 42,
+  file = "fits/va1.10"
+)
+
+va1.10 <- add_criterion(va1.10, criterion = c("loo", "waic")) 
+
+va1.11 <- brm(
+  data = d, family = bernoulli,
+  Myopia ~ 1 + age,
+  prior = c(prior(normal(0, 10), class = Intercept),
+            prior(normal(0, 10), class = b)),
+  iter = 10000, warmup = 5000, cores = 4, chains = 4,
+  #control = list(adapt_delta = .9),
+  seed = 42,
+  file = "fits/va1.11"
+)
+
+va1.11 <- add_criterion(va1.11, criterion = c("loo", "waic")) 
+
+
+va1.12 <- brm(
+  data = d, family = bernoulli,
+  Myopia ~ 1 + age + agesq,
+  prior = c(prior(normal(0, 10), class = Intercept),
+            prior(normal(0, 10), class = b)),
+  iter = 10000, warmup = 5000, cores = 4, chains = 4,
+  #control = list(adapt_delta = .9),
+  seed = 42,
+  file = "fits/va1.12"
+)
+
+va1.12 <- add_criterion(va1.12, criterion = c("loo", "waic")) 
+
+```
+
+Let's quickly take a peek at our mean only myopia prevalence estimate.
+
+```{r}
+fitted(va1.10, newdata = (tibble(Myopia = 1)), probs = c(.05,.95)) %>% round(2)
+```
+
+
+And we'll run a model selection..
+
+```{r}
+ms2 <- loo_compare(va1.10, va1.11, va1.12, criterion = "loo") %>%
+  round(digits = 2) %>% 
+  as.data.frame() %>% 
+  select(elpd_diff,se_diff) %>% 
+  rownames_to_column() %>%
+  arrange(rowname)
+  
+ms2 <- model_weights(va1.10, va1.11, va1.12, weights = "loo") %>% 
+  round(digits = 2) %>%
+  as.data.frame() %>% 
+  rownames_to_column() %>%
+  arrange(rowname) %>%
+  column_to_rownames("rowname") %>%
+  cbind(ms2) %>%
+  rename(
+    Weights = ".",
+    "ELPD Difference" = elpd_diff,
+    "SE Difference" = "se_diff"
+  ) %>%
+  arrange(desc(`ELPD Difference`)) %>%
+  select(-rowname)
+  
+ms2
+```
+
+Now to look at our estimates. More traditional to do another best of fit line, but as we're thinking about age specific visual acuity, I prefer to display the data as binned fitted predictions for a range of different ages, with error bars for our credibility intervals. I'll also include the linear model on the right.
+
+```{r}
+
+Age_seq <- 
+  tibble(age = seq(from = 15, to = 75, by = 5)) %>% 
+  mutate(agesq = age^2)
+
+fitd_5int <-
+  fitted(va1.12, 
+         newdata = Age_seq, probs = c(.05,.95)) %>%
+  data.frame() %>%
+  bind_cols(Age_seq)
+
+fig3 <- fitd_5int %>%
+  ggplot(aes(y=Estimate, x = age)) +
+  geom_point() + 
+  geom_errorbar(aes(ymin=Q5, ymax=Q95), width=0, lwd = .7) +
+  theme_bw(base_size=10) + 
+  scale_y_continuous(breaks = c(0,.1,.2,.3,.4,.5,.6,.7,.8,.9,1)) + 
+  scale_x_continuous(breaks = c(10,20,30,40,50,60,70)) + 
+  ylab("Estimated Myopia Prevalence") + xlab("Age")
+
+Age_seq <- 
+  tibble(age = seq(from = 10, to = 75, length.out = 100)) %>% 
+  mutate(agesq = age^2)
+
+fitd_myopia <-
+  fitted(va1.12, 
+         newdata = Age_seq, probs = c(.05,.95)) %>%
+  data.frame() %>%
+  bind_cols(Age_seq)
+
+
+fig4 <-
+  ggplot(data = d, 
+       aes(x = age)) +
+  geom_smooth(data = fitd_myopia,
+              aes(y = Estimate, ymin = Q5, ymax = Q95),
+              stat = "identity",
+              fill = "grey70", color = "black", alpha = 1, size = 1/2) +
+ geom_point(aes(y = Myopia),
+             color = "navyblue", 
+             shape = 1,
+             size = 1.5, alpha = 1/2) +
+  ylab("Myopia Probability") +
+  scale_y_continuous(breaks = c(0,.1,.2,.3,.4,.5,.6,.7,.8,.9,1)) + 
+  scale_x_continuous(breaks = c(10,20,30,40,50,60,70)) + 
+  xlab("Age") +
+  theme(text = element_text(family = "Times"),
+        panel.grid = element_blank())
+
+fig3 + fig4
+```
+
+As we can see myopia prevalence is between 5-10% for those under 40, with rapidly increasing prevalence (and diminishing statistical power!) thereafter. Unexpectedly, in our data, 15-year-olds have worse mean predicted eyesight than those between 25-45. This could be a result of increased uptake in schooling among younger Hadza but, looking at the credibility intervals, I think it's more likely to be a consequence of low samples for younger people. It merits further analysis, however, so let's look for affects of schooling and longitudinal trends.
+
+### Schooling ###
+
+Data on schooling is only available for a subset of our participants - those surveyed between 2013-14 by Stibbard Hawkes. The sample size here is at is low. We only have schooling data for a subset of 58. But the question is yet worth exploring. 
+
+First lets create a subset of d excluding participants without schooling data. We are assuming the missingness mechanism here is 'missing completely at random' (See McElreath, 2020). I believe this is a valid assumption for present data. 
+
+```{r}
+
+d_school <- d %>% drop_na(YearsSchool)
+
+```
+
+Now let's have a quick look at a few quick summary statistics.
+
+```{r}
+d_school %>%
+  ggplot(aes(x = YearsSchool)) + geom_histogram() + xlab("Years of School")
+```
+As we can see, those who attended school are in a minority. Let's quantify
+
+```{r}
+sum(d_school$YearsSchool >0)
+
+sum(d_school$YearsSchool == 0)
+```
+
+...and quickly calculate the percentage of school attendees.
+
+```{r}
+
+13/(13+45)*100
+
+```
+
+In fact, those who attended school are in such a minority that I expect this analysis will have insufficient statistical power. However, the analysis is still worth running. To begin we'll redo models 1.00-1.02, but dropping the cases without schooling data. We'll use these as a means of comparison in a later model selection.
+
+```{r}
+
+va1.20 <- brm(
+  data = d_school, family = gaussian,
+  BestEyeLogMAR ~ 1 + YearsSchool,
+  prior = c(prior(normal(0, 10), class = Intercept),
+            prior(normal(0, 10), class = b)),
+  iter = 10000, warmup = 5000, cores = 4, chains = 4,
+  #control = list(adapt_delta = .9),
+  seed = 42,
+  file = "fits/va1.20"
+)
+
+va1.20 <- add_criterion(va1.20, criterion = c("loo", "waic")) 
+
+va1.21 <- brm(
+  data = d_school, family = gaussian,
+  BestEyeLogMAR ~ 1 + YearsSchool + age,
+  prior = c(prior(normal(0, 10), class = Intercept),
+            prior(normal(0, 10), class = b)),
+  iter = 10000, warmup = 5000, cores = 4, chains = 4,
+  #control = list(adapt_delta = .9),
+  seed = 42,
+  file = "fits/va1.21"
+)
+
+va1.21 <- add_criterion(va1.21, criterion = c("loo", "waic")) 
+
+
+va1.22 <- brm(
+  data = d_school, family = gaussian,
+  BestEyeLogMAR ~ 1 + YearsSchool + age + agesq,
+  prior = c(prior(normal(0, 10), class = Intercept),
+            prior(normal(0, 10), class = b)),
+  iter = 10000, warmup = 5000, cores = 4, chains = 4,
+  #control = list(adapt_delta = .9),
+  seed = 42,
+  file = "fits/va1.22"
+)
+
+va1.22 <- add_criterion(va1.22, criterion = c("loo", "waic")) 
+
+```
+
+For the purposes of comparison we also want to see how these models improve upon their equivalents which do not include schooling. In order to do this we will rerun models 1.00 to 1.02 using the d_school subset.
+
+```{r}
+va1.30 <- brm(
+  data = d_school, family = gaussian,
+  BestEyeLogMAR ~ 1,
+  prior = c(prior(normal(0, 10), class = Intercept)),
+  iter = 10000, warmup = 5000, cores = 4, chains = 4,
+  #control = list(adapt_delta = .9),
+  seed = 42,
+  file = "fits/va1.30"
+)
+
+va1.30 <- add_criterion(va1.30, criterion = c("loo", "waic")) 
+
+va1.31 <- brm(
+  data = d_school, family = gaussian,
+  BestEyeLogMAR ~ 1 + age,
+  prior = c(prior(normal(0, 10), class = Intercept),
+            prior(normal(0, 10), class = b)),
+  iter = 10000, warmup = 5000, cores = 4, chains = 4,
+  #control = list(adapt_delta = .9),
+  seed = 42,
+  file = "fits/va1.31"
+)
+
+va1.31 <- add_criterion(va1.31, criterion = c("loo", "waic")) 
+
+
+va1.32 <- brm(
+  data = d_school, family = gaussian,
+  BestEyeLogMAR ~ 1 + age + agesq,
+  prior = c(prior(normal(0, 10), class = Intercept),
+            prior(normal(0, 10), class = b)),
+  iter = 10000, warmup = 5000, cores = 4, chains = 4,
+  #control = list(adapt_delta = .9),
+  seed = 42,
+  file = "fits/va1.32"
+)
+
+va1.32 <- add_criterion(va1.32, criterion = c("loo", "waic")) 
+
+```
+
+Now for our model selection
+
+```{r}
+ms3 <- loo_compare(va1.20, va1.30, va1.21, va1.31, va1.22, va1.32, criterion = "loo") %>%
+  round(digits = 2) %>% 
+  as.data.frame() %>% 
+  select(elpd_diff,se_diff) %>% 
+  rownames_to_column() %>%
+  arrange(rowname)
+  
+ms3 <- model_weights(va1.20, va1.30, va1.21, va1.31, va1.22, va1.32,weights = "loo") %>% 
+  round(digits = 2) %>%
+  as.data.frame() %>% 
+  rownames_to_column() %>%
+  arrange(rowname) %>%
+  column_to_rownames("rowname") %>%
+  cbind(ms3) %>%
+  rename(
+    Weights = ".",
+    "ELPD Difference" = elpd_diff,
+    "SE Difference" = "se_diff"
+  ) %>%
+  arrange(desc(`ELPD Difference`)) %>%
+  select(-rowname)
+  
+ms3
+```
+As we can see, although the model including schooling commands some model weight, the majority is given to the model without in every instance. For the paper let's briefly work out what proportion of the 'years of schooling' coefficient distribution is above 0.
+
+```{r}
+round(sum(posterior_samples(va1.22)$b_YearsSchool > 0)/length(posterior_samples(va1.22)$b_YearsSchool),3)*100
+```
+
+
+### Longitudinal Changes ###
+
+Last but not least, let's see if we can identify any statistically measurable longitudinal trends in our data by comparing the 2006 with the 2013-14 sample. The expectation here is that, if there is any change, age-controlled visual acuity will decrease as people spend more time in education and switch to more carb/grain-heavy diets etc. Let's see what happens shall we?
+
+We'll adapt models 1.00 to 1.02 by adding decade as a predictor.
+
+```{r}
+va1.50 <- brm(
+  data = d, family = gaussian,
+  BestEyeLogMAR ~ 1 + Decade,
+  prior = c(prior(normal(0, 10), class = Intercept),
+            prior(normal(0, 10), class = b)),
+  iter = 10000, warmup = 5000, cores = 4, chains = 4,
+  #control = list(adapt_delta = .9),
+  seed = 42,
+  file = "fits/va1.50"
+)
+
+va1.50 <- add_criterion(va1.50, criterion = c("loo", "waic")) 
+
+va1.51 <- brm(
+  data = d, family = gaussian,
+  BestEyeLogMAR ~ 1 + Decade + age,
+  prior = c(prior(normal(0, 10), class = Intercept),
+            prior(normal(0, 10), class = b)),
+  iter = 10000, warmup = 5000, cores = 4, chains = 4,
+  #control = list(adapt_delta = .9),
+  seed = 42,
+  file = "fits/va1.51"
+)
+
+va1.51 <- add_criterion(va1.51, criterion = c("loo", "waic")) 
+
+
+va1.52 <- brm(
+  data = d, family = gaussian,
+  BestEyeLogMAR ~ 1 + Decade + age + agesq,
+  prior = c(prior(normal(0, 10), class = Intercept),
+            prior(normal(0, 10), class = b)),
+  iter = 10000, warmup = 5000, cores = 4, chains = 4,
+  #control = list(adapt_delta = .9),
+  seed = 42,
+  file = "fits/va1.52"
+)
+
+va1.52 <- add_criterion(va1.52, criterion = c("loo", "waic")) 
+
+```
+
+Unexpectedly, controlling for age reveals some small improvement. According to this model, those in the 2010 sample actually had better vision. Let's compare the models including decade to those which don't.
+
+```{r}
+ms4 <- loo_compare(va1.00, va1.50, va1.01, va1.51, va1.02, va1.52, criterion = "loo") %>%
+  round(digits = 2) %>% 
+  as.data.frame() %>% 
+  select(elpd_diff,se_diff) %>% 
+  rownames_to_column() %>%
+  arrange(rowname)
+  
+ms4 <- model_weights(va1.00, va1.50, va1.01, va1.51, va1.02, va1.52, weights = "loo") %>% 
+  round(digits = 2) %>%
+  as.data.frame() %>% 
+  rownames_to_column() %>%
+  arrange(rowname) %>%
+  column_to_rownames("rowname") %>%
+  cbind(ms4) %>%
+  rename(
+    Weights = ".",
+    "ELPD Difference" = elpd_diff,
+    "SE Difference" = "se_diff"
+  ) %>%
+  arrange(desc(`ELPD Difference`)) %>%
+  select(-rowname)
+  
+ms4
+
+```
+The model including decade outperform the equivalent models excluding decade in each instance. This improved vision is surprising but could be a function of gender,  as there is evidence that men in many populations have better eyesight and there were no women in the 2013-14 sample. Gladly we can test this. Let's see if this finding persists when we include gender as a control.
+
+
+```{r}
+
+va1.60 <- brm(
+  data = d, family = gaussian,
+  BestEyeLogMAR ~ 1 + sex,
+  prior = c(prior(normal(0, 10), class = Intercept),
+            prior(normal(0, 10), class = b)),
+  iter = 10000, warmup = 5000, cores = 4, chains = 4,
+  #control = list(adapt_delta = .9),
+  seed = 42,
+  file = "fits/va1.60"
+)
+
+va1.60 <- add_criterion(va1.60, criterion = c("loo", "waic")) 
+
+va1.62 <- brm(
+  data = d, family = gaussian,
+  BestEyeLogMAR ~ 1 + sex + age + agesq,
+  prior = c(prior(normal(0, 10), class = Intercept),
+            prior(normal(0, 10), class = b)),
+  iter = 10000, warmup = 5000, cores = 4, chains = 4,
+  #control = list(adapt_delta = .9),
+  seed = 42,
+  file = "fits/va1.62"
+)
+
+va1.62 <- add_criterion(va1.62, criterion = c("loo", "waic")) 
+
+va1.63 <- brm(
+  data = d, family = gaussian,
+  BestEyeLogMAR ~ 1 + Decade + age + agesq + sex,
+  prior = c(prior(normal(0, 10), class = Intercept),
+            prior(normal(0, 10), class = b)),
+  iter = 10000, warmup = 5000, cores = 4, chains = 4,
+  #control = list(adapt_delta = .9),
+  seed = 42,
+  file = "fits/va1.63"
+)
+
+va1.63 <- add_criterion(va1.63, criterion = c("loo", "waic")) 
+```
+
+In line with expectations it seems that men do have substantially better eyesight than women. It also appears that these reduce a lot of the impact of decade. Let's compare models with another model selection. 
+
+```{r}
+ms5 <- loo_compare(va1.00, va1.50, va1.01, va1.02, va1.52, va1.60, va1.62, va1.63, criterion = "loo") %>%
+  round(digits = 2) %>% 
+  as.data.frame() %>% 
+  select(elpd_diff,se_diff) %>% 
+  rownames_to_column() %>%
+  arrange(rowname)
+  
+ms5 <- model_weights(va1.00, va1.50, va1.01, va1.02, va1.52, va1.60, va1.62, va1.63, weights = "loo") %>% 
+  round(digits = 2) %>%
+  as.data.frame() %>% 
+  rownames_to_column() %>%
+  arrange(rowname) %>%
+  column_to_rownames("rowname") %>%
+  cbind(ms5) %>%
+  rename(
+    Weights = ".",
+    "ELPD Difference" = elpd_diff,
+    "SE Difference" = "se_diff"
+  ) %>%
+  arrange(desc(`ELPD Difference`)) %>%
+  select(-rowname)
+  
+ms5
+```
+
+## Figures and Tables ##
+
+Finally let's create some tables for our analysis. First we'll create our table for model selection results. We'll start by running a full model selection with all our models of interest. We know that age as a quadratic always outperforms the model including age as a linear predictor only, so to save space our full model selection excludes a couple of the linear age models. We've also included the school only models separately as schooling data were only available for a subset of our dataset.
+
+
+
+```{r}
+
+VAFullMS <- ms5 %>%
+  rownames_to_column() %>%
+  add_row(.before = 1) %>%
+  mutate(
+    !! paste0("\u0023") := c("\ref{Tab:ModelSelection}.1 (Visual Acuity)",rep("",8)), #Unicode for the hash. The LaTeX Syntax will automate reporting to our MS.,
+    Definition = rowname,
+    .before = 1
+  )
+
+
+VASchoolMS <- ms3 %>%
+  rownames_to_column() %>%
+  add_row(.before = 1) %>%
+  mutate(
+    !! paste0("\u0023") := c("\ref{Tab:ModelSelection}.2 (VA School Attendance)",rep("",6)), #Unicode for the hash. The LaTeX Syntax will automate reporting to our MS.,
+    Definition = rowname,
+    .before = 1
+  ) 
+
+MYOPIAMS <- ms2 %>%
+  rownames_to_column() %>%
+  add_row(.before = 1) %>%
+  mutate(
+    !! paste0("\u0023") := c("\ref{Tab:ModelSelection}.3 (Myopia Prevalence)",rep("",3)), #Unicode for the hash. The LaTeX Syntax will automate reporting to our MS.,
+    Definition = rowname,
+    .before = 1
+  ) 
+
+
+MS <- rbind(VAFullMS, VASchoolMS,MYOPIAMS) %>%
+  select(-rowname)
+
+MS
+
+```
+Now we'll change the model names into left-side model definitions.
+
+```{r}
+
+MS %<>%
+  mutate_if(is.character, 
+      str_replace_all, pattern = "va1.00", replacement = "Mean") %>%
+  mutate_if(is.character, 
+      str_replace_all, pattern = "va1.01", replacement = "1 + Age") %>%
+  mutate_if(is.character, 
+      str_replace_all, pattern = "va1.02", replacement = "1 + Age + Age$^2$") %>%
+  
+  
+  mutate_if(is.character, 
+      str_replace_all, pattern = "va1.10", replacement = "Mean") %>%
+  mutate_if(is.character, 
+      str_replace_all, pattern = "va1.11", replacement = "1 + Age") %>%
+  mutate_if(is.character, 
+      str_replace_all, pattern = "va1.12", replacement = "1 + Age + Age$^2$") %>%
+  
+  mutate_if(is.character, 
+      str_replace_all, pattern = "va1.20", replacement = "1 + School") %>%
+  mutate_if(is.character, 
+      str_replace_all, pattern = "va1.21", replacement = "1 + Age + School") %>%
+  mutate_if(is.character, 
+      str_replace_all, pattern = "va1.22", replacement = "1 + Age + Age$^2$ + School") %>%
+  
+  
+  mutate_if(is.character, 
+      str_replace_all, pattern = "va1.30", replacement = "Mean") %>%
+  mutate_if(is.character, 
+      str_replace_all, pattern = "va1.31", replacement = "1 + Age") %>%
+  mutate_if(is.character, 
+      str_replace_all, pattern = "va1.32", replacement = "1 + Age + Age$^2$") %>%
+  
+  
+  mutate_if(is.character, 
+      str_replace_all, pattern = "va1.50", replacement = "1 + Decade") %>%
+  mutate_if(is.character, 
+      str_replace_all, pattern = "va1.51", replacement = "1 + Age + Decade") %>%
+  mutate_if(is.character, 
+      str_replace_all, pattern = "va1.52", replacement = "1 + Age + Age$^2$ + Decade") %>%
+  
+  
+  mutate_if(is.character, 
+      str_replace_all, pattern = "va1.60", replacement = "1 + Gender") %>%
+  mutate_if(is.character, 
+      str_replace_all, pattern = "va1.61", replacement = "1 + Age + Gender") %>%
+  mutate_if(is.character, 
+      str_replace_all, pattern = "va1.62", replacement = "1 + Age + Age$^2$ + Gender") %>%
+    mutate_if(is.character, 
+      str_replace_all, pattern = "va1.63", replacement = "1 + Age + Age$^2$ + Decade + Gender")
+
+MS
+
+```
+And now we'll export in LaTeX format
+
+```{r}
+ModelSelectionTableLaTeX <- MS %>% 
+  xtable(include.rownames = F, 
+         label = "Tab:ModelSelection",
+         caption = "Leave-one-out model selection results including expected log-predictive density differences, standard errors and Akaike weights. One and 2 take visual acuity as their outcome, 1 for the full sample, 2 for the sub-sample where schooling data were available. Three has myopia as the outcome. Left-side model definitions provided in BRMs Linear syntax", 
+         )
+
+print(ModelSelectionTableLaTeX,
+    #  only.contents = getOption("xtable.only.contents", T),
+    sanitize.text.function = function(str) gsub("ef", "\\ref", str, fixed = TRUE),
+    sanitize.colnames.function = getOption("xtable.sanitize.colnames.function", NULL),
+      include.rownames = FALSE,
+       hline.after = c(
+          -1,
+          which(ModelSelectionTableLaTeX$`#` == "\ref{Tab:ModelSelection}.1 (Visual Acuity)")-1,
+          which(ModelSelectionTableLaTeX$`#` == "\ref{Tab:ModelSelection}.2 (VA School Attendance)")-1,
+          which(ModelSelectionTableLaTeX$`#` == "\ref{Tab:ModelSelection}.3 (Myopia Prevalence)")-1
+       ),
+    caption.placement = "bottom",
+    size = "small",
+    file = "TablesAndFigures/ModelSelectionTable.txt",
+)
+
+
+```
+
+Next we'll make a table of model summaries for our most notable and best-fitting models.
+
+```{r}
+
+CoefTab <- 
+  fixef(va1.63, probs = c(0.05, 0.95)) %>%
+  as.data.frame() %>%
+  round(2) %>%
+  rownames_to_column() %>%
+  add_row(.before = 1) %>%
+  mutate(
+    Definition := c("\ref{Tab:ModelSummary}.6 Visual Acuity $\\sim$1 + Age + Age$^2$ + Decade + Gender",rep("",5)), #Unicode for the hash. The LaTeX Syntax will automate reporting to our MS.,
+    Predictor = rowname,
+    .before = 1
+  ) %>%
+  select(-rowname)
+
+
+CoefTab <- 
+  fixef(va1.62, probs = c(0.05, 0.95)) %>%
+  as.data.frame() %>%
+  round(2) %>%
+  rownames_to_column() %>%
+  add_row(.before = 1) %>%
+  mutate(
+    Definition := c("\ref{Tab:ModelSummary}.5 Visual Acuity  $\\sim$1 + Age + Age$^2$ + Gender",rep("",4)), #Unicode for the hash. The LaTeX Syntax will automate reporting to our MS.,
+    Predictor = rowname,
+    .before = 1
+  ) %>%
+  select(-rowname)%>%
+  bind_rows(CoefTab)
+
+
+CoefTab <- 
+  fixef(va1.52, probs = c(0.05, 0.95)) %>%
+  as.data.frame() %>%
+  round(2) %>%
+  rownames_to_column() %>%
+  add_row(.before = 1) %>%
+  mutate(
+    Definition := c("\ref{Tab:ModelSummary}.4 Visual Acuity  $\\sim$1 + Age + Age$^2$ + Decade",rep("",4)), #Unicode for the hash. The LaTeX Syntax will automate reporting to our MS.,
+    Predictor = rowname,
+    .before = 1
+  ) %>%
+  select(-rowname)%>%
+  bind_rows(CoefTab)
+
+
+CoefTab <- 
+  fixef(va1.12, probs = c(0.05, 0.95)) %>%
+  as.data.frame() %>%
+  round(2) %>%
+  rownames_to_column() %>%
+  add_row(.before = 1) %>%
+  mutate(
+    Definition := c("\ref{Tab:ModelSummary}.3 Myopia  $\\sim$1 + Age + Age$^2$",rep("",3)), #Unicode for the hash. The LaTeX Syntax will automate reporting to our MS.,
+    Predictor = rowname,
+    .before = 1
+  ) %>%
+  select(-rowname) %>%
+  bind_rows(CoefTab)
+
+
+CoefTab <- 
+  fixef(va1.02, probs = c(0.05, 0.95)) %>%
+  as.data.frame() %>%
+  round(2) %>%
+  rownames_to_column() %>%
+  add_row(.before = 1) %>%
+  mutate(
+    Definition := c("\ref{Tab:ModelSummary}.2 Visual Acuity  $\\sim$1 + Age + Age$^2$",rep("",3)), #Unicode for the hash. The LaTeX Syntax will automate reporting to our MS.,
+    Predictor = rowname,
+    .before = 1
+  ) %>%
+  select(-rowname) %>%
+  bind_rows(CoefTab)
+
+
+CoefTab <- 
+  fixef(va1.00, probs = c(0.05, 0.95)) %>%
+  as.data.frame() %>%
+  round(2) %>%
+  rownames_to_column() %>%
+  add_row(.before = 1) %>%
+  mutate(
+    Definition := c("\ref{Tab:ModelSummary}.1 Visual Acuity  $\\sim$1",rep("",1)), #Unicode for the hash. The LaTeX Syntax will automate reporting to our MS.,
+    Predictor = rowname,
+    .before = 1
+  ) %>%
+  select(-rowname) %>%
+  bind_rows(CoefTab)
+
+```
+
+Let's quickly rename a few of our variables to make them more presentable for publication.
+
+```{r}
+CoefTab %<>% mutate_if(is.character, 
+      str_replace_all, pattern = "age", replacement = "Age") %>%
+  mutate_if(is.character, 
+      str_replace_all, pattern = "Agesq", replacement = "Age$^2$") %>%
+    mutate_if(is.character, 
+      str_replace_all, pattern = "Decade2010s", replacement = "Decade (2010)") %>%
+    mutate_if(is.character, 
+      str_replace_all, pattern = "sexmale", replacement = "Gender (Male)") 
+  
+CoefTab
+
+```
+And now to save as a figure for the manuscript.
+
+```{r}
+ModelSelectionTableLaTeX <- CoefTab %>% 
+  xtable(include.rownames = F, 
+         label = "Tab:ModelSummary",
+         caption = "Six key regression model summaries, including mean a posteriori coefficients, estimate errors and 90 percent credibility intervals. Units in log odds for model \\ref{Tab:ModelSummary}.3 and LogMAR for models \\ref{Tab:ModelSummary}.1-2 and \\ref{Tab:ModelSummary}.4-6", 
+         )
+
+print(ModelSelectionTableLaTeX,
+    #  only.contents = getOption("xtable.only.contents", T),
+    sanitize.text.function = function(str) gsub("ef", "\\ref", str, fixed = TRUE),
+    sanitize.colnames.function = getOption("xtable.sanitize.colnames.function", NULL),
+      include.rownames = FALSE,
+       hline.after = c(
+          -1),
+    caption.placement = "bottom",
+    size = "small",
+    file = "TablesAndFigures/ModelSummaries.txt",
+)
+
+```
+
+We'll also create a table of age-specific myopia prevalences from other populations to compare to our own estimates. Many of these are sourced from Grzybowski et als superb 2020 paper in BMC Opthalmology. 
+
+We'll build this one row by row.
+
+```{r}
+
+#A couple of the studies did not mean ages eather across the sample or for subsamples of interest. So we calculated them.
+
+MongoliaMeanAge <- c(rep(7,(25+40))
+  ,rep(8,(58+44))
+  ,rep(9,(36+39))
+  ,rep(10,(43+51))
+  ,rep(11,(46+40))
+  ,rep(12,(55+47))
+  ,rep(13,(64+65))
+  ,rep(14,(50+57))
+  ,rep(15,(44+52))
+  ,rep(16,(50+69))
+  ,rep(17,(42+40))
+    ) %>% mean %>% round(2) 
+
+AlaskaCrudeMeanAge <- 
+  c(rep(43.4,(33))
+  ,rep(48.5,(20))
+  ,rep(53.5,(24))
+  ,rep(58.5,(21))
+  ,rep(63.5,(16))
+  ,rep(68.5,(9))
+  ,rep(79.5,(8))
+  ) %>% mean %>% round(2) #See Table 1 in Young (1969)
+
+#Now to build our table.
+
+ComparisonTable <- tibble(
+    Country = "South Africa", Region = "Africa", 
+       Sample = 1586, AverageAge = 15.81, AgeRange = "13-18",
+       Prevalence = 7, Notes = "Non-cycloplegic autorefraction", 
+       Study = "\\citealt{Wajuihian2017}") %>%
+  
+  add_row(Country = "Colombia", Region = "S. America", 
+          Sample = 1228, AverageAge = 11.4, AgeRange = "8-17",
+          Prevalence = 11.2, Notes = "Non-cycloplegic autorefraction", 
+          Study = "\\citealt{Galvis2017}") %>%
+
+  add_row(Country = "China", Region = "E. Asia", 
+          Sample = 15066, AverageAge = 13.2, AgeRange = "7-18",
+          Prevalence = 64.9, Notes = "Non-cycloplegic autorefraction", 
+          Study = "\\citealt{You2014}") %>%
+
+  add_row(Country = "Australia", Region = "Meganesia", 
+          Sample = 1202, AverageAge = 17, AgeRange = "17",
+          Prevalence = 30.8, 
+          Notes = "2011 Data; Cycloplegic autorefraction", 
+          Study = "\\citealt{French2013}") %>%
+
+  add_row(Country = "Argentine", Region = "S. America", 
+          Sample = 1518, AverageAge = 43.2, AgeRange = "25-65",
+          Prevalence = 29.18, Notes = "Office Workers; Non-cycloplegic Subjective", 
+          Study = "\\citealt{Cortinez2008}") %>%
+  
+  
+  add_row(Country = "Ecuador", Region = "S. America", 
+          Sample = 507, AverageAge = 31, AgeRange = "18-45*",
+          Prevalence = 4.7, 
+          Notes = "Naporuna Community; Cycloplegic autorefraction", 
+          Study = "\\citealt{Jimenez2004}") %>%
+  
+
+  add_row(Country = "Iran", Region = "W. Asia", 
+          Sample = 1367, AverageAge = 63.7, AgeRange = "55-80",
+          Prevalence = 27.2, Notes = "Mashad; Non-cycloplegic autorefraction", 
+          Study = "\\citealt{Yekta2009}") %>%
+  
+  add_row(Country = "Singapore", Region = "E. Asia", 
+          Sample = 28908, AverageAge = 19.8, AgeRange = "17-29",
+          Prevalence = 81.6, Notes = "Non-cycloplegic autorefraction", 
+          Study = "\\citealt{Koh2014}") %>%
+
+  add_row(Country = "UK", Region = "Europe", 
+          Sample = 373, AverageAge = 19.55, AgeRange = "17-30",
+          Prevalence = 51.7, 
+          Notes = "UK Undergraduates; Non-cycloplegic autorefraction", 
+          Study = "\\citealt{Logan2005}") %>%
+    
+  add_row(Country = "Nigeria", Region = "Africa", 
+          Sample = 252, AverageAge = 36.2, AgeRange = "19-63",
+          Prevalence = 11.4, Notes = "Subjective refraction", 
+          Study = "\\citealt{Eze2012}") %>%
+    
+  add_row(Country = "Mongolia", Region = "E. Asia", 
+          Sample = 1057, AverageAge = MongoliaMeanAge, 
+          AgeRange = "7-17",
+          Prevalence = 5.8, Notes = "Non-cycloplegic autorefraction", 
+          Study = "\\citealt{Narankhand2006}") %>%
+    
+  add_row(Country = "USA (Alaska)", Region = "N. America", 
+          Sample = 131, AverageAge = AlaskaCrudeMeanAge, AgeRange = "41-88",
+          Prevalence = 1.5, Notes = "Right Eyes; Subjective refraction", 
+          Study = "\\citealt{Young1969}") %>%
+ 
+  add_row(Country = "Gabon", Region = "Africa", 
+          Sample = 3624, AverageAge = 42.2, AgeRange = "20-65*",
+          Prevalence = 0.39, Notes = "Per eye measures, 2364 individuals; Cycloplegic retinoscopy", 
+          Study = "\\citealt{Holm1937}")
+
+```
+
+Now to compare to those average ages in from our model.
+
+```{r}
+
+Ages <- 
+  tibble(age = ComparisonTable$AverageAge) %>% 
+  mutate(agesq = age^2)
+
+ComparisonTable <-
+  fitted(va1.12, 
+         newdata = Ages, probs = c(.05,.95)) %>%
+  data.frame() %>%
+  round(4) %>%
+  bind_cols(ComparisonTable) %>%
+  mutate(
+    Estimate = Estimate*100,
+    Q5 = Q5*100,
+    Q95 = Q95*100,
+    "P.P. Difference" = Prevalence-Estimate
+  ) %>%
+  select(-Est.Error)
+```
+
+Last we'll pretty the table up slightly, rename and reorder some columns. This code isn't the prettiest but it does the trick.
+
+
+```{r}
+
+#First let's collate our CIs
+
+ComparisonTable %<>% 
+  unite("CI", c("Q5","Q95"), sep = "-") 
+
+#Now let's unite them with our estimates to save space in the document. I couldn't find a function that did exactly this, so I used a loop. Sometimes suboptimal code is easier than googling.
+
+  for(i in 1:nrow(ComparisonTable)){
+  ComparisonTable$Estimate[i] <- paste(ComparisonTable$Estimate[i], " (", ComparisonTable$CI[i], "\\%)", sep = "")
+}; rm(i)
+
+#Now we'll move some of the columns around and do some renaming and other tidying.
+
+ComparisonTable %<>% 
+  relocate(Estimate, .after = Prevalence) %>%
+  relocate(`P.P. Difference`, .after = Estimate) %>%
+  mutate(
+    Sample = as.character(Sample)
+  ) %>%
+  rename(
+    "Average Age" = AverageAge,
+    "Age Range" = AgeRange,
+    "Hadza Est. \\% (90\\%CIs)" = Estimate,
+    "\\%" = Prevalence
+    ) %>%
+  select(-CI) %>%
+  arrange(desc(`P.P. Difference`))
+
+
+```
+
+
+Now let's export in LaTeX format.
+
+```{r}
+ComparisonTableLaTeX <- ComparisonTable %>% 
+  xtable(include.rownames = F, 
+         label = "Tab:Comparisons",
+         caption = "Myopia prevalences from a range of studies compared to equivalent-age fitted Hadza myopia prevalence estimates from our best-fitting model. Where study mean ages were not available, we used the centre of the study age range instead, indicated with asterisks. Most items were previously tabulated or summarised by \\cite[][]{Holden2016}, \\cite[][]{Grzybowski2020} and \\cite[][]{Cordain2002}.", 
+         )
+
+print(ComparisonTableLaTeX,
+    sanitize.text.function = function(str) gsub("\\", "\\", str, fixed = TRUE), 
+    sanitize.colnames.function = function(str) gsub("\\", "\\", str, fixed = TRUE),
+      include.rownames = FALSE,
+       hline.after = c(
+          -1),
+    caption.placement = "bottom",
+    size = "scriptsize",
+    file = "TablesAndFigures/ComparisonTable.txt",
+)
+
+```
+
+
+Finally we'll collate and save our two figures.
+
+```{r, warning = FALSE, message = FALSE}
+VAMyopia <- (fig1 + fig4 + plot_layout(
+  ncol = 1,
+  nrow = 2,
+))
+
+ggsave(
+  plot = VAMyopia,
+  file = "VAMyopia.pdf",
+  path = "TablesAndFigures",
+  width = 25,
+  height = 32,
+  units = "cm")
+
+VAMyopia
+```
+
+
+## Save & Session Info ##
+
+Finally, let's print our our session info.
+
+```{r}
+sessionInfo()
+
+```

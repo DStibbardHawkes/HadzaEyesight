@@ -1,0 +1,26 @@
+% latex table generated in R 4.1.0 by xtable 1.8-4 package
+% Fri Jun 17 18:21:15 2022
+\begin{table}[ht]
+\centering
+\begin{tabular}{llll}
+  \hline
+  & Combined Sample & 2006 Sample & 2014 Sample \\ 
+  \hline
+Total N & 182 & 110 & 72 \\ 
+  Total Age Range & 10 - 75 & 10 - 70 & 17 - 75 \\ 
+  Total Med. Age & 35 & 33.5 & 38 \\ 
+  Provided Education Data & 58 & 0 & 58 \\ 
+  Had Some Schooling & 13 & NA & 13 \\ 
+  Years in School, Range & 0 - 7 & NA & 0 - 7 \\ 
+   \hline
+Men N & 123 & 51 & 72 \\ 
+  Men Age Range & 10 - 75 & 10 - 68 & 17 - 75 \\ 
+  Men Med. Age & 35 & 33 & 38 \\ 
+   \hline
+Women N & 59 & 59 & 0 \\ 
+  Women Age Range & 12 - 70 & 12 - 70 & NA \\ 
+  Women Med. Age & 35 & 35 & NA \\ 
+  \end{tabular}
+\caption{Participant demographics by study year.} 
+\label{Tab:Demographics}
+\end{table}

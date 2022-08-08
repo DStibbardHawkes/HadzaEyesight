@@ -1,0 +1,36 @@
+% latex table generated in R 4.2.0 by xtable 1.8-4 package
+% Tue Jul 19 17:41:01 2022
+\begin{table}[ht]
+\centering
+\begingroup\small
+\begin{tabular}{llrrr}
+  \hline
+\# & Definition & Weights & ELPD Difference & SE Difference \\ 
+  \hline
+\ref{Tab:ModelSelection}.1 (Visual Acuity) &  &  &  &  \\ 
+   & 1 + Age + Age$^2$ + Decade + Gender & 0.48 & 0.00 & 0.00 \\ 
+   & 1 + Age + Age$^2$ + Gender & 0.44 & -0.11 & 1.36 \\ 
+   & 1 + Age + Age$^2$ + Decade & 0.08 & -1.83 & 2.79 \\ 
+   & 1 + Age + Age$^2$ & 0.00 & -6.24 & 3.81 \\ 
+   & 1 + Age & 0.00 & -15.75 & 6.15 \\ 
+   & 1 + Gender & 0.00 & -25.82 & 11.04 \\ 
+   & 1 + Decade & 0.00 & -27.86 & 11.88 \\ 
+   & Mean & 0.00 & -28.55 & 11.14 \\ 
+   \hline
+\ref{Tab:ModelSelection}.2 (VA School Attendance) &  &  &  &  \\ 
+   & 1 + Age + Age$^2$ & 0.67 & 0.00 & 0.00 \\ 
+   & 1 + Age + Age$^2$ + School & 0.33 & -0.72 & 1.25 \\ 
+   & 1 + Age & 0.00 & -8.13 & 5.52 \\ 
+   & 1 + Age + School & 0.00 & -8.14 & 5.13 \\ 
+   & Mean & 0.00 & -17.64 & 9.54 \\ 
+   & 1 + School & 0.00 & -18.22 & 9.20 \\ 
+   \hline
+\ref{Tab:ModelSelection}.3 (Myopia Prevalence) &  &  &  &  \\ 
+   & 1 + Age + Age$^2$ & 0.88 & 0.00 & 0.00 \\ 
+   & 1 + Age & 0.12 & -2.01 & 1.89 \\ 
+   & Mean & 0.00 & -8.61 & 5.54 \\ 
+  \end{tabular}
+\endgroup
+\caption{Leave-one-out model selection results including expected log-predictive density differences, standard errors and Akaike weights. One and 2 take visual acuity as their outcome, 1 for the full sample, 2 for the sub-sample where schooling data were available. Three has myopia as the outcome. Left-side model definitions provided in BRMs Linear syntax} 
+\label{Tab:ModelSelection}
+\end{table}
